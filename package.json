@@ -1,0 +1,40 @@
+{
+  "name": "tunelearn",
+  "version": "1.0.0",
+  "description": "A rich MIDI keyboard web application with virtual piano, chord detection, and music theory tools",
+  "main": "index.html",
+  "scripts": {
+    "dev": "python3 -m http.server 8080",
+    "serve": "python3 -m http.server 8080",
+    "build": "echo 'No build step required for static files'",
+    "start": "python3 -m http.server 8080"
+  },
+  "keywords": [
+    "midi",
+    "piano",
+    "keyboard",
+    "music",
+    "theory",
+    "web-audio",
+    "chords",
+    "scales",
+    "synthesizer"
+  ],
+  "author": "Sarath Avasarala",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sarathavasarala/tunelearn.git"
+  },
+  "homepage": "https://github.com/sarathavasarala/tunelearn#readme",
+  "devDependencies": {},
+  "dependencies": {},
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ]
+}
