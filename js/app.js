@@ -24,6 +24,7 @@ class TuneLearnApp {
         this.activeNotes = new Set();
         this.scaleLockEnabled = false;
         this.currentMode = 'free-play'; // 'free-play' or 'training'
+        this.userPerformanceInput = [];
     }
 
     async init() {
@@ -58,11 +59,6 @@ class TuneLearnApp {
             
             // Initialize exercise engine
             this.exerciseEngine = new ExerciseEngine(this.audioEngine, this.piano);
-            
-            // Override the ExerciseEngine's displayExercise method to use our app's rendering
-            this.exerciseEngine.displayExercise = () => {
-                this.renderCurrentExercise();
-            };
             
             // Set up event listeners
             this.setupEventListeners();
@@ -200,6 +196,17 @@ class TuneLearnApp {
         }
 
         this.activeNotes.add(note);
+        
+        // Capture performance input if in training mode and relevant exercise is active
+        if (this.currentMode === 'training' && 
+            this.exerciseEngine && 
+            this.exerciseEngine.isActive &&
+            this.exerciseEngine.currentExercise && 
+            (this.exerciseEngine.currentExercise === 'scale-practice' || this.exerciseEngine.currentExercise === 'chord-building')) {
+            
+            this.userPerformanceInput.push(note); 
+            console.log('Collected note for performance: ', note, this.userPerformanceInput); // For debugging
+        }
         
         // Parse note name and octave
         const noteMatch = note.match(/^([A-G]#?)(\d+)$/);
@@ -596,6 +603,7 @@ class TuneLearnApp {
     // Mode switching and exercise controls
     switchToFreePlay() {
         this.currentMode = 'free-play';
+        document.body.classList.remove('performance-exercise-active');
         this.updateModeUI();
     }
 
@@ -642,33 +650,64 @@ class TuneLearnApp {
 
     showExerciseStartScreen() {
         const exercisePanel = document.getElementById('exercise-panel');
+        if (!exercisePanel || !this.exerciseEngine) return;
 
-        if (exercisePanel) {
-            exercisePanel.innerHTML = `
-                <div class="exercise-start">
-                    <h3>🎵 Piano Training</h3>
-                    <p>Welcome to your piano practice session!</p>
-                    <p>Current Level: ${this.exerciseEngine.currentLevel}</p>
-                    <p>Progress: ${this.exerciseEngine.sessionStats.exercisesCompleted} exercises completed</p>
-                    <button id="start-exercise" class="btn btn-primary">Start Training</button>
-                </div>
-            `;
+        document.body.classList.remove('performance-exercise-active'); // Remove focus mode on start screen
 
-            // Re-attach the event listener
-            const startBtn = document.getElementById('start-exercise');
-            if (startBtn) {
-                startBtn.addEventListener('click', () => this.startExercise());
-            }
+        const level = this.exerciseEngine.getCurrentLevel();
+        const sessionStats = this.exerciseEngine.getSessionStats();
+        const levelData = this.exerciseEngine.getCurrentLevelData();
+
+        exercisePanel.innerHTML = `
+            <div class="exercise-start">
+                <h3>🎵 Piano Training</h3>
+                ${levelData ? `
+                    <p class="current-level-display">Current Level: ${level} - ${levelData.name}</p>
+                    <p>Progress for this level: ${sessionStats.exercisesCompleted} / ${levelData.minExercises || 'N/A'} exercises.</p>
+                    <p>Required accuracy for this level: ${(levelData.requiredAccuracy * 100).toFixed(0)}%</p>
+                ` : '<p>Loading level data...</p>'}
+                <p>Overall exercises completed this session: ${sessionStats.exercisesCompleted}</p>
+                <button id="start-exercise" class="btn btn-primary">Start Training</button>
+                ${ level > 1 ? '<button id="reset-progress-btn" class="btn btn-secondary" style="margin-top: 10px;">Reset Progress to Level 1</button>' : ''}
+            </div>
+        `;
+
+        const startBtn = document.getElementById('start-exercise');
+        if (startBtn) {
+            startBtn.addEventListener('click', () => this.startExercise());
+        }
+
+        const resetBtn = document.getElementById('reset-progress-btn');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => this.confirmResetProgress());
+        }
+    }
+
+    confirmResetProgress() {
+        if (confirm("Are you sure you want to reset all your progress to Level 1? This cannot be undone.")) {
+            this.resetProgress();
+        }
+    }
+
+    resetProgress() {
+        if (this.exerciseEngine) {
+            this.exerciseEngine.resetProgressToLevel1();
+            this.showExerciseStartScreen(); // Refresh start screen
+            this.showFeedback("Your progress has been reset to Level 1.", "info");
         }
     }
 
     startExercise() {
         if (!this.exerciseEngine) return;
 
+        if (this.piano) { // Ensure piano is initialized
+            this.piano.clearAllKeyColorizations();
+        }
+        this.userPerformanceInput = []; // Reset performance input
+
         const success = this.exerciseEngine.startExercise();
         if (success) {
-            // Override the ExerciseEngine's display method to use our app structure
-            this.renderCurrentExercise();
+            this.renderCurrentExercise(); // Render after exercise engine has started
         } else {
             this.showFeedback('Failed to start exercise. Please try again.', 'error');
         }
@@ -678,155 +717,177 @@ class TuneLearnApp {
         const exercisePanel = document.getElementById('exercise-panel');
         if (!exercisePanel || !this.exerciseEngine.currentExercise) return;
 
-        const config = this.exerciseEngine.exerciseTypes.get(this.exerciseEngine.currentExercise);
+        // Focus Mode: Add or remove class based on exercise type
+        if (this.exerciseEngine.currentExercise === 'scale-practice' || this.exerciseEngine.currentExercise === 'chord-building') {
+            document.body.classList.add('performance-exercise-active');
+        } else {
+            document.body.classList.remove('performance-exercise-active');
+        }
+
+        const exerciseConfig = this.exerciseEngine.exerciseTypes.get(this.exerciseEngine.currentExercise);
+        const levelData = this.exerciseEngine.getCurrentLevelData();
+        const sessionStats = this.exerciseEngine.getSessionStats();
         
         exercisePanel.innerHTML = `
             <div class="exercise-header">
-                <h3>${config.name}</h3>
-                <div class="exercise-progress">
-                    Level ${this.exerciseEngine.currentLevel} | Exercise ${this.exerciseEngine.sessionStats.exercisesCompleted + 1}
-                </div>
+                <h3>${exerciseConfig ? exerciseConfig.name : 'Exercise'}</h3>
+                ${levelData ? `
+                    <div class="exercise-level-info">Level ${this.exerciseEngine.currentLevel}: ${levelData.name}</div>
+                    <div class="exercise-session-progress">
+                        Level Progress: ${sessionStats.exercisesCompleted} / ${levelData.minExercises || 'N/A'} exercises
+                    </div>
+                ` : ''}
             </div>
             <div class="exercise-content">
                 ${this.renderExerciseContent()}
             </div>
+            ${this.exerciseEngine.exerciseData && this.exerciseEngine.exerciseData.theorySnippet ? `
+            <div class="theory-snippet">
+                <strong>💡 Tip:</strong> ${this.exerciseEngine.exerciseData.theorySnippet}
+            </div>
+            ` : ''}
             <div class="exercise-controls">
-                <button id="check-answer" class="btn btn-primary" style="display: none;">Check Answer</button>
+                ${ (this.exerciseEngine.currentExercise === 'scale-practice' || this.exerciseEngine.currentExercise === 'chord-building') ?
+                    '<button id="submit-performance-btn" class="btn btn-primary">Submit Attempt</button>' :
+                    '<button id="check-answer" class="btn btn-primary" style="display: none;">Check Answer</button>'
+                }
                 <button id="next-exercise" class="btn btn-secondary" style="display: none;">Next Exercise</button>
             </div>
-            <div class="exercise-stats">
-                Accuracy: ${(this.exerciseEngine.sessionStats.accuracy * 100).toFixed(1)}% | 
-                Completed: ${this.exerciseEngine.sessionStats.exercisesCompleted}
+            <div class="session-stats-display">
+                <h4>Session Stats</h4>
+                <p>Accuracy: ${(sessionStats.accuracy * 100).toFixed(1)}%</p>
+                <p>Correct: ${sessionStats.correctAnswers}</p>
+                <p>Attempts: ${sessionStats.totalAttempts}</p>
+                <p>Total Completed: ${sessionStats.exercisesCompleted}</p>
             </div>
         `;
         
         // Re-attach event listeners
-        const checkAnswerBtn = document.getElementById('check-answer');
         const nextExerciseBtn = document.getElementById('next-exercise');
-        
-        if (checkAnswerBtn) {
-            checkAnswerBtn.addEventListener('click', () => this.checkAnswer());
-        }
-        
         if (nextExerciseBtn) {
             nextExerciseBtn.addEventListener('click', () => this.nextExercise());
         }
 
-        // Attach event listeners for answer buttons
+        const submitPerformanceBtn = document.getElementById('submit-performance-btn');
+        if (submitPerformanceBtn) {
+            submitPerformanceBtn.addEventListener('click', () => this.submitPerformanceAnswer());
+        }
+
+        const checkAnswerBtn = document.getElementById('check-answer');
+        if (checkAnswerBtn) {
+            checkAnswerBtn.addEventListener('click', () => this.checkAnswer());
+            // Initial state of checkAnswerBtn for MCQs (hidden until an option is picked)
+             if (!(this.exerciseEngine.currentExercise === 'scale-practice' || this.exerciseEngine.currentExercise === 'chord-building')) {
+                checkAnswerBtn.style.display = 'none';
+            }
+        }
+        
+        // Attach event listeners for multiple-choice answer buttons if they exist
         const exerciseAnswerButtons = exercisePanel.querySelectorAll('.answer-btn');
-        exerciseAnswerButtons.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                // Remove previous selections
-                exerciseAnswerButtons.forEach(b => b.classList.remove('selected'));
-                // Mark this button as selected
-                e.target.classList.add('selected');
-                
-                // Show check answer button if this is a multiple choice exercise
-                if (checkAnswerBtn) {
-                    checkAnswerBtn.style.display = 'inline-block';
-                }
+        if (exerciseAnswerButtons.length > 0) {
+            exerciseAnswerButtons.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    exerciseAnswerButtons.forEach(b => b.classList.remove('selected'));
+                    e.target.classList.add('selected');
+                    if (checkAnswerBtn) { // Show check answer button for MCQs
+                        checkAnswerBtn.style.display = 'inline-block';
+                    }
+                });
             });
-        });
-
-        // Add event listeners for answer buttons
-        const answerButtons = exercisePanel.querySelectorAll('.answer-btn');
-        answerButtons.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                // Remove previous selections
-                answerButtons.forEach(b => b.classList.remove('selected'));
-                // Mark this button as selected
-                e.target.classList.add('selected');
-                
-                // Show check answer button when an answer is selected
-                const checkBtn = document.getElementById('check-answer');
-                if (checkBtn) {
-                    checkBtn.style.display = 'inline-block';
-                }
-            });
-        });
-
-        // Auto-play audio for listening exercises
-        if (this.exerciseEngine.exerciseData.playNote) {
-            setTimeout(() => this.exerciseEngine.exerciseData.playNote(), 500);
         }
-        if (this.exerciseEngine.exerciseData.playInterval) {
-            setTimeout(() => this.exerciseEngine.exerciseData.playInterval(), 500);
+
+        // Auto-play audio for listening exercises using the new handler
+        if (this.exerciseEngine.exerciseData && this.exerciseEngine.exerciseData.audioPlayback) {
+            setTimeout(() => this.handlePlayExerciseAudio(), 500);
         }
-        if (this.exerciseEngine.exerciseData.playChord) {
-            setTimeout(() => this.exerciseEngine.exerciseData.playChord(), 500);
+
+        const playAudioBtn = document.getElementById('play-exercise-audio-btn');
+        if (playAudioBtn) {
+            playAudioBtn.addEventListener('click', () => this.handlePlayExerciseAudio());
         }
     }
 
     renderExerciseContent() {
-        if (!this.exerciseEngine.exerciseData) {
+        const exerciseData = this.exerciseEngine.exerciseData;
+        if (!exerciseData) {
             return '<p>Loading exercise...</p>';
         }
 
+        let contentHtml = '';
+
         switch (this.exerciseEngine.currentExercise) {
             case 'note-identification':
-                return `
+                contentHtml = `
                     <div class="exercise-question">
-                        <p>What note was played?</p>
-                        <button onclick="app.exerciseEngine.exerciseData.playNote()" class="btn btn-primary">
+                        <p>${exerciseData.question}</p>
+                        <button id="play-exercise-audio-btn" class="btn btn-primary">
                             🔊 Play Again
                         </button>
                     </div>
                     <div class="exercise-answers">
-                        ${this.generateNoteOptions(this.exerciseEngine.exerciseData.correctAnswer).map(option => 
+                        ${this.generateNoteOptions(exerciseData.correctAnswer).map(option => 
                             `<button class="answer-btn btn">${option}</button>`
                         ).join('')}
                     </div>
                 `;
+                break;
                 
             case 'interval-identification':
-                return `
+                contentHtml = `
                     <div class="exercise-question">
-                        <p>What interval is being played?</p>
-                        <button onclick="app.exerciseEngine.exerciseData.playInterval()" class="btn btn-primary">
+                        <p>${exerciseData.question}</p>
+                        <button id="play-exercise-audio-btn" class="btn btn-primary">
                             🔊 Play Again
                         </button>
                     </div>
                     <div class="exercise-answers">
-                        ${this.generateIntervalOptions(this.exerciseEngine.exerciseData.correctAnswer).map(option => 
+                        ${this.generateIntervalOptions(exerciseData.correctAnswer).map(option => 
                             `<button class="answer-btn btn">${option}</button>`
                         ).join('')}
                     </div>
                 `;
+                break;
                 
             case 'chord-identification':
-                return `
+                contentHtml = `
                     <div class="exercise-question">
-                        <p>What chord is being played?</p>
-                        <button onclick="app.exerciseEngine.exerciseData.playChord()" class="btn btn-primary">
+                        <p>${exerciseData.question}</p>
+                        <button id="play-exercise-audio-btn" class="btn btn-primary">
                             🔊 Play Again
                         </button>
                     </div>
                     <div class="exercise-answers">
-                        ${this.generateChordOptions(this.exerciseEngine.exerciseData.correctAnswer).map(option => 
+                        ${this.generateChordOptions(exerciseData.correctAnswer).map(option => 
                             `<button class="answer-btn btn">${option}</button>`
                         ).join('')}
                     </div>
                 `;
+                break;
                 
             case 'scale-practice':
-                return `
+                contentHtml = `
                     <div class="exercise-question">
-                        <p>Play the ${this.exerciseEngine.exerciseData.scaleName} scale starting from ${this.exerciseEngine.exerciseData.rootNote}</p>
-                        <p class="instruction">Use your MIDI keyboard or click the piano keys</p>
+                        <p>${exerciseData.instruction}</p>
+                        <p class="instruction-detail">Use your MIDI keyboard or click the piano keys. Notes will be validated as you play.</p>
                     </div>
+                    <div id="performance-feedback" class="performance-feedback"></div>
                 `;
+                break;
                 
             case 'chord-building':
-                return `
+                contentHtml = `
                     <div class="exercise-question">
-                        <p>Build a ${this.exerciseEngine.exerciseData.chordName} chord starting from ${this.exerciseEngine.exerciseData.rootNote}</p>
-                        <p class="instruction">Use your MIDI keyboard or click the piano keys</p>
+                        <p>${exerciseData.instruction}</p>
+                        <p class="instruction-detail">Use your MIDI keyboard or click the piano keys. Notes will be validated when you indicate completion.</p>
                     </div>
+                    <div id="performance-feedback" class="performance-feedback"></div>
                 `;
+                break;
                 
             default:
-                return '<p>Unknown exercise type</p>';
+                contentHtml = `<p>Unknown exercise type or content not implemented yet.</p>`;
         }
+        return contentHtml;
     }
 
     generateNoteOptions(correctAnswer) {
@@ -932,24 +993,92 @@ class TuneLearnApp {
         }
 
         const selectedAnswer = selectedBtn.textContent.trim();
-        const isCorrect = this.exerciseEngine.submitAnswer(selectedAnswer);
+        const feedback = this.exerciseEngine.submitAnswer(selectedAnswer);
+
+        this.showFeedback(feedback.message, feedback.isCorrect ? 'success' : 'error');
 
         // Disable answer buttons after submission
         const answerButtons = exerciseContent.querySelectorAll('.answer-btn');
         answerButtons.forEach(btn => {
             btn.disabled = true;
-            if (btn.textContent.trim() === this.exerciseEngine.exerciseData.correctAnswer) {
-                btn.classList.add('correct-answer');
+            // Highlight the correct answer if the user was wrong and details are available
+            if (!feedback.isCorrect && feedback.correctAnswerDetails && btn.textContent.trim() === feedback.correctAnswerDetails) {
+                btn.classList.add('correct-answer'); 
             }
         });
 
-        // Hide check answer button
+        // Hide check answer button and show next exercise button
         const checkAnswerBtn = document.getElementById('check-answer');
         if (checkAnswerBtn) {
-            checkAnswerBtn.style.display = 'none';
+            checkAnswerBtn.disabled = true; 
+        }
+        const nextExerciseBtn = document.getElementById('next-exercise');
+        if (nextExerciseBtn) {
+            nextExerciseBtn.style.display = 'inline-block';
+        }
+        
+        // No automatic nextExercise call, user clicks the button.
+    }
+
+    submitPerformanceAnswer() {
+        if (!this.exerciseEngine || !this.exerciseEngine.isActive) {
+            console.warn('Cannot submit performance, exercise engine not active.');
+            return;
         }
 
-        // The ExerciseEngine will handle feedback and auto-advance
+        // Prevent submission if no notes were played
+        if (this.userPerformanceInput.length === 0) {
+            this.showFeedback('Please play some notes before submitting!', 'warning');
+            return;
+        }
+
+        console.log('Submitting performance input:', this.userPerformanceInput);
+        
+        // Call the exercise engine's submitAnswer with the array of notes.
+        const feedback = this.exerciseEngine.submitAnswer(this.userPerformanceInput); 
+
+        if (feedback.playedNotes && feedback.expectedNotes) {
+            this.displayPerformanceVisualFeedback(feedback.playedNotes, feedback.expectedNotes);
+        }
+        this.showFeedback(feedback.message, feedback.isCorrect ? 'success' : 'error');
+        
+        // Disable the submit button
+        const submitBtn = document.getElementById('submit-performance-btn');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+        }
+
+        // Show "Next Exercise" button
+        const nextExerciseBtn = document.getElementById('next-exercise');
+        if (nextExerciseBtn) {
+            nextExerciseBtn.style.display = 'inline-block';
+        }
+        
+        // No automatic nextExercise call, user clicks the button.
+        // Visual feedback for performance exercises (e.g., highlighting notes on piano) will be in a future task.
+    }
+
+    displayPerformanceVisualFeedback(playedNotes, expectedNotes) {
+        if (!this.piano) return;
+
+        this.piano.clearAllKeyColorizations(); // Clear previous attempt's feedback first
+
+        const playedSet = new Set(playedNotes);
+        const expectedSet = new Set(expectedNotes);
+        const allNotesInvolved = new Set([...playedNotes, ...expectedNotes]);
+
+        allNotesInvolved.forEach(note => {
+            const isPlayed = playedSet.has(note);
+            const isExpected = expectedSet.has(note);
+
+            if (isPlayed && isExpected) {
+                this.piano.colorizeKey(note, 'user-played-correct');
+            } else if (isPlayed && !isExpected) {
+                this.piano.colorizeKey(note, 'user-played-incorrect');
+            } else if (!isPlayed && isExpected) {
+                this.piano.colorizeKey(note, 'expected-missed');
+            }
+        });
     }
 
     showExerciseResult(result) {
@@ -983,9 +1112,115 @@ class TuneLearnApp {
             nextExerciseBtn.style.display = 'none';
         }
 
-        // Check if level completed (this method needs to be added to ExerciseEngine)
-        // For now, just start the next exercise
-        this.startExercise();
+        if (this.exerciseEngine) {
+            const levelUpData = this.exerciseEngine.nextExercise(); // This now returns notification or null
+            
+            if (levelUpData && levelUpData.isLevelUp) {
+               this.showModalNotification(levelUpData.message, "Level Up!");
+            }
+
+            if (this.exerciseEngine.currentExercise) { // If a new exercise was successfully started
+                this.renderCurrentExercise(); 
+            } else {
+                // Handle case where no more exercises or curriculum ends
+                this.showExerciseStartScreen(); 
+                this.showFeedback("🎉 Congratulations! You've completed all available exercises for now.", "success");
+            }
+        }
+    }
+
+    showModalNotification(message, title = "Notification") {
+        // Remove any existing modal first
+        const existingModal = document.getElementById('app-modal-overlay');
+        if (existingModal) {
+            existingModal.remove();
+        }
+
+        const overlay = document.createElement('div');
+        overlay.id = 'app-modal-overlay';
+        overlay.className = 'modal-overlay';
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-content';
+
+        modal.innerHTML = `
+            <h2 class="modal-title">${title}</h2>
+            <p class="modal-message">${message}</p>
+            <button id="modal-close-btn" class="btn btn-primary">Continue</button>
+        `;
+
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        document.getElementById('modal-close-btn').addEventListener('click', () => {
+            overlay.remove();
+        });
+
+        // Optional: close on overlay click
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                overlay.remove();
+            }
+        });
+    }
+
+    handlePlayExerciseAudio() {
+        if (!this.audioEngine) {
+            console.error("AudioEngine not available.");
+            return;
+        }
+        if (!this.exerciseEngine || !this.exerciseEngine.exerciseData || !this.exerciseEngine.exerciseData.audioPlayback) {
+            console.warn("No audio playback data available for this exercise.");
+            return;
+        }
+
+        const audioData = this.exerciseEngine.exerciseData.audioPlayback;
+
+        switch (audioData.type) {
+            case 'note':
+                if (audioData.noteName && typeof audioData.octave !== 'undefined') {
+                    this.audioEngine.playNote(audioData.noteName, audioData.octave, 0.8, 1.5); // Duration 1.5s
+                } else {
+                    console.error("Missing data for note playback:", audioData);
+                }
+                break;
+            case 'interval':
+                if (audioData.rootName && typeof audioData.rootOctave !== 'undefined' && typeof audioData.intervalSemitones !== 'undefined') {
+                    this.audioEngine.playNote(audioData.rootName, audioData.rootOctave, 0.8, 1); // Duration 1s
+                    setTimeout(() => {
+                        const rootMidiVal = MusicTheory.noteToMidi(audioData.rootName, audioData.rootOctave);
+                        if (rootMidiVal === null) {
+                             console.error("Invalid root note for interval playback:", audioData); return;
+                        }
+                        const targetMidi = rootMidiVal + audioData.intervalSemitones;
+                        const targetNoteFull = MusicTheory.midiToNote(targetMidi);
+                        this.audioEngine.playNote(targetNoteFull.note, targetNoteFull.octave, 0.8, 1); // Duration 1s
+                    }, 800); // Delay between notes (e.g., 800ms)
+                } else {
+                    console.error("Missing data for interval playback:", audioData);
+                }
+                break;
+            case 'chord':
+                if (audioData.rootName && typeof audioData.rootOctave !== 'undefined' && Array.isArray(audioData.intervals)) {
+                    const rootMidiVal = MusicTheory.noteToMidi(audioData.rootName, audioData.rootOctave);
+                    if (rootMidiVal === null) {
+                         console.error("Invalid root note for chord playback:", audioData); return;
+                    }
+                    // Play chord notes with a slight stagger or simultaneously if AudioEngine supports it well
+                    audioData.intervals.forEach((intervalSemitone, index) => {
+                        setTimeout(() => {
+                            const targetMidi = rootMidiVal + intervalSemitone;
+                            const noteToPlay = MusicTheory.midiToNote(targetMidi);
+                            this.audioEngine.playNote(noteToPlay.note, noteToPlay.octave, 0.6, 1.5); // Duration 1.5s
+                        }, index * 50); // Stagger chord notes slightly
+                    });
+                } else {
+                    console.error("Missing data for chord playback:", audioData);
+                }
+                break;
+            default:
+                console.warn("Unknown audio playback type:", audioData.type);
+        }
     }
 
     showFeedback(message, type = 'info') {
