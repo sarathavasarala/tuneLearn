@@ -822,10 +822,16 @@ class TuneLearnApp {
         const exerciseView = document.getElementById('exercise-view'); // Target new container
         if (!exerciseView || !this.exerciseEngine.exerciseData) {
             console.error("Exercise view or exercise data not found for rendering.");
-            // Potentially show learning path if this critical error occurs
             this.showLearningPathView();
             return;
         }
+
+        // Declare button variables once at the top of the function scope
+        let nextExerciseBtn = null;
+        let submitPerformanceBtn = null;
+        let checkAnswerBtn = null;
+        let backToPathBtn = null;
+        let playAudioBtn = null;
         
         const exerciseData = this.exerciseEngine.exerciseData;
         document.body.classList.remove('performance-exercise-active'); // Default, will be added back if needed
@@ -849,9 +855,8 @@ class TuneLearnApp {
         }
         
         const currentLevelNum = this.exerciseEngine.getCurrentLevel();
-        const currentLevelInfo = this.exerciseEngine.getCurrentLevelData(); // Renamed from currentLevelData for clarity
+        const currentLevelInfo = this.exerciseEngine.getCurrentLevelData();
         const levelTitleText = currentLevelInfo ? `Level ${currentLevelNum}: ${currentLevelInfo.name}` : 'Practice Mode';
-
 
         exerciseView.innerHTML = `
             <div class="exercise-view-header-bar">
@@ -889,48 +894,28 @@ class TuneLearnApp {
             </div>
         `;
         
-        // Re-attach event listeners
-        const nextExerciseBtn = document.getElementById('next-exercise');
-        if (nextExerciseBtn) {
-            nextExerciseBtn.addEventListener('click', () => this.nextExercise());
-        }
-
-        const submitPerformanceBtn = document.getElementById('submit-performance-btn');
-        if (submitPerformanceBtn) {
-            submitPerformanceBtn.addEventListener('click', () => this.submitPerformanceAnswer());
-        }
-
-        const checkAnswerBtn = document.getElementById('check-answer');
-        if (checkAnswerBtn) {
-            checkAnswerBtn.addEventListener('click', () => this.checkAnswer());
-            // Initial state of checkAnswerBtn for MCQs (hidden until an option is picked)
-             if (!(this.exerciseEngine.currentExercise === 'scale-practice' || this.exerciseEngine.currentExercise === 'chord-building')) {
-                checkAnswerBtn.style.display = 'none';
-            }
-        }
-        
-        
-        // Re-attach common event listeners
-        const backToPathBtn = document.getElementById('back-to-path-btn');
+        // After innerHTML is set, query and assign the elements
+        backToPathBtn = document.getElementById('back-to-path-btn');
         if (backToPathBtn) {
             backToPathBtn.addEventListener('click', () => this.showLearningPathView());
         }
 
-        const nextExerciseBtn = document.getElementById('next-exercise');
+        nextExerciseBtn = document.getElementById('next-exercise');
         if (nextExerciseBtn) {
             nextExerciseBtn.addEventListener('click', () => this.nextExercise());
         }
 
-        const submitPerformanceBtn = document.getElementById('submit-performance-btn');
-        if (submitPerformanceBtn) {
-            submitPerformanceBtn.addEventListener('click', () => this.submitPerformanceAnswer());
-        }
-
-        const checkAnswerBtn = document.getElementById('check-answer');
-        if (checkAnswerBtn) {
-            checkAnswerBtn.addEventListener('click', () => this.checkAnswer());
-             if (exerciseData && !(exerciseData.type === 'scale-practice' || exerciseData.type === 'chord-building')) {
-                checkAnswerBtn.style.display = 'none'; // Initially hidden for MCQs
+        if (exerciseData.type === 'scale-practice' || exerciseData.type === 'chord-building') {
+            submitPerformanceBtn = document.getElementById('submit-performance-btn');
+            if (submitPerformanceBtn) {
+                submitPerformanceBtn.addEventListener('click', () => this.submitPerformanceAnswer());
+            }
+        } else {
+            checkAnswerBtn = document.getElementById('check-answer');
+            if (checkAnswerBtn) {
+                checkAnswerBtn.addEventListener('click', () => this.checkAnswer());
+                // Initial state of checkAnswerBtn for MCQs (hidden until an option is picked)
+                checkAnswerBtn.style.display = 'none';
             }
         }
         
