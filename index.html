@@ -87,9 +87,37 @@
             <button id="exercise-mode" class="btn btn-mode">Training</button>
         </div>
 
-        <!-- Exercise Panel (hidden by default) -->
+        <!-- Exercise Panel (hidden by default, shown in Training mode) -->
         <div id="exercise-panel" class="exercise-panel" style="display: none;">
-            <!-- Exercise content will be dynamically generated -->
+            <div id="learning-path-view">
+                <h2 class="learning-path-title">Your Learning Journey</h2>
+                <div id="learning-path-container">
+                    <!-- Units and Skill nodes will be dynamically generated here by app.js -->
+                    <!-- Example structure for one unit and a few skills:
+                    <div class="unit-container">
+                        <h3 class="unit-title">Unit 1: Music Fundamentals</h3>
+                        <div class="skills-row">
+                            <div class="skill-node unlocked" data-level="1">
+                                <span class="skill-icon">🎵</span>
+                                <span class="skill-name">Level 1: Intro to Notes</span>
+                            </div>
+                            <div class="skill-node locked" data-level="2">
+                                <span class="skill-icon">🎵</span>
+                                <span class="skill-name">Level 2: Basic Notes & Accidentals</span>
+                            </div>
+                            <div class="skill-node locked" data-level="3">
+                                <span class="skill-icon">🎵</span>
+                                <span class="skill-name">Level 3: Basic Intervals</span>
+                            </div>
+                        </div>
+                    </div>
+                    -->
+                </div>
+            </div>
+            <div id="exercise-view" style="display: none;">
+                <!-- Current exercise content (question, answers, feedback) will be rendered here by app.js -->
+                <!-- This is where the content previously directly inside exercise-panel will now go -->
+            </div>
         </div>
         
         <!-- Exercise Feedback -->
@@ -204,11 +232,19 @@
     <!-- Scripts -->
     <script src="js/audio-engine.js"></script>
     <script src="js/midi-handler.js"></script>
-    <script src="js/music-theory.js"></script>
+    <script src="js/music-theory.js"></script> <!-- Dependency for engines -->
     <script src="js/piano-keyboard.js"></script>
     <script src="js/chord-detection.js"></script>
     <script src="js/practice-tools.js"></script>
-    <script src="js/exercise-engine.js"></script>
+
+    <!-- Core Exercise Engines -->
+    <script src="js/engines/base-engine.js"></script>
+    <script src="js/engines/note-engine.js"></script>
+    <script src="js/engines/interval-engine.js"></script>
+    <script src="js/engines/scale-engine.js"></script>
+    <script src="js/engines/chord-engine.js"></script>
+
+    <script src="js/exercise-engine.js"></script> <!-- Orchestrator, to be refactored -->
     <script src="js/app.js"></script>
 </body>
 </html>
