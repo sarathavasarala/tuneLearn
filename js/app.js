@@ -620,6 +620,9 @@ class TuneLearnApp {
         const chordLibrary = document.querySelector('.chord-library');
         const practiceTools = document.querySelector('.practice-tools');
         const exercisePanel = document.getElementById('exercise-panel');
+        const learningPathView = document.getElementById('learning-path-view');
+        const exerciseView = document.getElementById('exercise-view');
+
 
         if (freePlayBtn && trainingBtn) {
             freePlayBtn.classList.toggle('active', this.currentMode === 'free-play');
@@ -627,61 +630,28 @@ class TuneLearnApp {
         }
 
         if (this.currentMode === 'free-play') {
-            // Show free play elements
             if (controlPanel) controlPanel.style.display = 'block';
             if (infoPanel) infoPanel.style.display = 'block';
             if (chordLibrary) chordLibrary.style.display = 'block';
             if (practiceTools) practiceTools.style.display = 'block';
             if (exercisePanel) exercisePanel.style.display = 'none';
-        } else {
-            // Show training elements
+            document.body.classList.remove('performance-exercise-active'); // Ensure focus mode is off
+        } else { // Training mode
             if (controlPanel) controlPanel.style.display = 'none';
             if (infoPanel) infoPanel.style.display = 'none';
             if (chordLibrary) chordLibrary.style.display = 'none';
             if (practiceTools) practiceTools.style.display = 'none';
             if (exercisePanel) exercisePanel.style.display = 'block';
             
-            // If switching to training mode and no exercise is active, show the start screen
-            if (this.exerciseEngine && !this.exerciseEngine.currentExercise) {
-                this.showExerciseStartScreen();
-            }
+            // Default to showing learning path, hide exercise view
+            // The 'exercise-active' class on exercisePanel will control this.
+            // If an exercise is active, renderLearningPath won't be called directly,
+            // but startExercise will set 'exercise-active'.
+            this.renderLearningPath(); 
         }
     }
 
-    showExerciseStartScreen() {
-        const exercisePanel = document.getElementById('exercise-panel');
-        if (!exercisePanel || !this.exerciseEngine) return;
-
-        document.body.classList.remove('performance-exercise-active'); // Remove focus mode on start screen
-
-        const level = this.exerciseEngine.getCurrentLevel();
-        const sessionStats = this.exerciseEngine.getSessionStats();
-        const levelData = this.exerciseEngine.getCurrentLevelData();
-
-        exercisePanel.innerHTML = `
-            <div class="exercise-start">
-                <h3>🎵 Piano Training</h3>
-                ${levelData ? `
-                    <p class="current-level-display">Current Level: ${level} - ${levelData.name}</p>
-                    <p>Progress for this level: ${sessionStats.exercisesCompleted} / ${levelData.minExercises || 'N/A'} exercises.</p>
-                    <p>Required accuracy for this level: ${(levelData.requiredAccuracy * 100).toFixed(0)}%</p>
-                ` : '<p>Loading level data...</p>'}
-                <p>Overall exercises completed this session: ${sessionStats.exercisesCompleted}</p>
-                <button id="start-exercise" class="btn btn-primary">Start Training</button>
-                ${ level > 1 ? '<button id="reset-progress-btn" class="btn btn-secondary" style="margin-top: 10px;">Reset Progress to Level 1</button>' : ''}
-            </div>
-        `;
-
-        const startBtn = document.getElementById('start-exercise');
-        if (startBtn) {
-            startBtn.addEventListener('click', () => this.startExercise());
-        }
-
-        const resetBtn = document.getElementById('reset-progress-btn');
-        if (resetBtn) {
-            resetBtn.addEventListener('click', () => this.confirmResetProgress());
-        }
-    }
+    // showExerciseStartScreen() is removed as its functionality is replaced by renderLearningPath.
 
     confirmResetProgress() {
         if (confirm("Are you sure you want to reset all your progress to Level 1? This cannot be undone.")) {
@@ -692,45 +662,204 @@ class TuneLearnApp {
     resetProgress() {
         if (this.exerciseEngine) {
             this.exerciseEngine.resetProgressToLevel1();
-            this.showExerciseStartScreen(); // Refresh start screen
+            this.renderLearningPath(); // Refresh learning path view
             this.showFeedback("Your progress has been reset to Level 1.", "info");
         }
     }
 
-    startExercise() {
+    startExercise(levelToStart = null) { // Allow specifying a level
         if (!this.exerciseEngine) return;
 
-        if (this.piano) { // Ensure piano is initialized
+        if (levelToStart !== null) {
+            this.exerciseEngine.currentLevel = levelToStart;
+            // Optionally reset session stats for the new level if desired
+            // this.exerciseEngine.sessionStats = { ... initial stats ... };
+        }
+
+        if (this.piano) {
             this.piano.clearAllKeyColorizations();
         }
-        this.userPerformanceInput = []; // Reset performance input
+        this.userPerformanceInput = [];
 
-        const success = this.exerciseEngine.startExercise();
+        const success = this.exerciseEngine.startExercise(); // ExerciseEngine uses its currentLevel
+        
+        const exercisePanel = document.getElementById('exercise-panel');
+
         if (success) {
-            this.renderCurrentExercise(); // Render after exercise engine has started
+            if(exercisePanel) exercisePanel.classList.add('exercise-active');
+            this.renderCurrentExercise(); 
         } else {
-            this.showFeedback('Failed to start exercise. Please try again.', 'error');
+            if(exercisePanel) exercisePanel.classList.remove('exercise-active');
+            this.showFeedback('Failed to start exercise. Please select a level from the path.', 'error');
+            this.renderLearningPath(); // Show path again if starting exercise failed
+        }
+    }
+    
+    showLearningPathView() {
+        const exercisePanel = document.getElementById('exercise-panel');
+        if (exercisePanel) {
+            exercisePanel.classList.remove('exercise-active');
+        }
+        document.body.classList.remove('performance-exercise-active'); // Remove focus mode
+        
+        // Optionally, tell engine to deactivate current exercise if needed
+        if (this.exerciseEngine) {
+            this.exerciseEngine.isActive = false; 
+            this.exerciseEngine.exerciseData = null;
+            this.exerciseEngine.currentExercise = null; // Clear current exercise type key
+        }
+        this.renderLearningPath();
+    }
+
+    renderLearningPath() {
+        const learningPathContainer = document.getElementById('learning-path-container');
+        const exercisePanel = document.getElementById('exercise-panel');
+        const learningPathView = document.getElementById('learning-path-view');
+        const exerciseView = document.getElementById('exercise-view');
+
+
+        if (!learningPathContainer || !this.exerciseEngine || !exercisePanel || !learningPathView || !exerciseView) {
+            console.error("Learning path rendering prerequisites not met.");
+            return;
+        }
+
+        learningPathContainer.innerHTML = ''; // Clear previous path
+        exercisePanel.classList.remove('exercise-active'); // Ensure path view is shown
+
+        const curriculum = this.exerciseEngine.curriculum;
+        const userLevel = this.exerciseEngine.getCurrentLevel();
+        const sessionStats = this.exerciseEngine.getSessionStats(); // For completion status potentially
+
+        // Example: Group levels into units of 3 for display
+        const levelsPerUnit = 3;
+        let currentUnitNumber = 1;
+        let skillsInCurrentUnit = [];
+
+        const levelKeys = Object.keys(curriculum).map(k => parseInt(k, 10)).sort((a, b) => a - b);
+
+        for (let i = 0; i < levelKeys.length; i++) {
+            const level = levelKeys[i];
+            const levelData = curriculum[level];
+
+            const skillNode = document.createElement('div');
+            skillNode.className = 'skill-node';
+            skillNode.dataset.level = level;
+
+            const skillIcon = document.createElement('span');
+            skillIcon.className = 'skill-icon';
+            skillIcon.textContent = levelData.icon || '🎵'; // Use icon from curriculum or default
+
+            const skillName = document.createElement('span');
+            skillName.className = 'skill-name';
+            skillName.textContent = `Level ${level}: ${levelData.name}`;
+
+            skillNode.appendChild(skillIcon);
+            skillNode.appendChild(skillName);
+            
+            // Determine status: completed, unlocked, locked
+            // This logic might need refinement based on how 'completed' is truly tracked.
+            // For now, if currentLevel is X, all < X are 'completed', X is 'unlocked'.
+            if (level < userLevel) {
+                skillNode.classList.add('completed');
+            } else if (level === userLevel) {
+                skillNode.classList.add('unlocked');
+            } else {
+                skillNode.classList.add('locked');
+            }
+
+            if (skillNode.classList.contains('unlocked') || skillNode.classList.contains('completed')) {
+                skillNode.addEventListener('click', () => {
+                    // this.exerciseEngine.currentLevel = level; // Set by startExercise
+                    this.startExercise(level); // Pass the selected level to startExercise
+                });
+            }
+            skillsInCurrentUnit.push(skillNode);
+
+            if (skillsInCurrentUnit.length === levelsPerUnit || i === levelKeys.length - 1) {
+                const unitDiv = document.createElement('div');
+                unitDiv.className = 'unit-container';
+                
+                const unitTitle = document.createElement('h3');
+                unitTitle.className = 'unit-title';
+                // Example Unit Naming - can be more sophisticated
+                const unitEndLevel = level;
+                const unitStartLevel = unitEndLevel - skillsInCurrentUnit.length + 1;
+                unitTitle.textContent = `Unit ${currentUnitNumber}: Levels ${unitStartLevel}-${unitEndLevel}`; 
+                unitDiv.appendChild(unitTitle);
+
+                const skillsRow = document.createElement('div');
+                skillsRow.className = 'skills-row';
+                skillsInCurrentUnit.forEach(node => skillsRow.appendChild(node));
+                
+                unitDiv.appendChild(skillsRow);
+                learningPathContainer.appendChild(unitDiv);
+                
+                skillsInCurrentUnit = [];
+                currentUnitNumber++;
+            }
+        }
+        
+        // Add reset progress button if not on level 1 and path is shown
+        const existingResetButton = learningPathContainer.querySelector('#reset-progress-btn');
+        if (existingResetButton) existingResetButton.remove();
+
+        if (userLevel > 1) {
+            const resetBtn = document.createElement('button');
+            resetBtn.id = 'reset-progress-btn';
+            resetBtn.className = 'btn btn-secondary';
+            resetBtn.textContent = 'Reset Progress to Level 1';
+            resetBtn.style.marginTop = '20px';
+            resetBtn.style.display = 'block'; // Center it
+            resetBtn.style.marginLeft = 'auto';
+            resetBtn.style.marginRight = 'auto';
+            resetBtn.addEventListener('click', () => this.confirmResetProgress());
+            learningPathContainer.appendChild(resetBtn);
         }
     }
 
-    renderCurrentExercise() {
-        const exercisePanel = document.getElementById('exercise-panel');
-        if (!exercisePanel || !this.exerciseEngine.currentExercise) return;
 
-        // Focus Mode: Add or remove class based on exercise type
-        if (this.exerciseEngine.currentExercise === 'scale-practice' || this.exerciseEngine.currentExercise === 'chord-building') {
+    renderCurrentExercise() {
+        const exerciseView = document.getElementById('exercise-view'); // Target new container
+        if (!exerciseView || !this.exerciseEngine.exerciseData) {
+            console.error("Exercise view or exercise data not found for rendering.");
+            // Potentially show learning path if this critical error occurs
+            this.showLearningPathView();
+            return;
+        }
+        
+        const exerciseData = this.exerciseEngine.exerciseData;
+        document.body.classList.remove('performance-exercise-active'); // Default, will be added back if needed
+
+        if (exerciseData.type === 'scale-practice' || exerciseData.type === 'chord-building') {
             document.body.classList.add('performance-exercise-active');
-        } else {
-            document.body.classList.remove('performance-exercise-active');
         }
 
-        const exerciseConfig = this.exerciseEngine.exerciseTypes.get(this.exerciseEngine.currentExercise);
         const levelData = this.exerciseEngine.getCurrentLevelData();
         const sessionStats = this.exerciseEngine.getSessionStats();
+        let exerciseDisplayName = "Exercise";
+        if (exerciseData && exerciseData.type) {
+            const names = {
+                'note-identification': 'Note Identification',
+                'interval-identification': 'Interval Identification',
+                'scale-practice': 'Scale Practice',
+                'chord-identification': 'Chord Identification',
+                'chord-building': 'Chord Building'
+            };
+            exerciseDisplayName = names[exerciseData.type] || exerciseData.type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
+        }
         
-        exercisePanel.innerHTML = `
+        const currentLevelNum = this.exerciseEngine.getCurrentLevel();
+        const currentLevelInfo = this.exerciseEngine.getCurrentLevelData(); // Renamed from currentLevelData for clarity
+        const levelTitleText = currentLevelInfo ? `Level ${currentLevelNum}: ${currentLevelInfo.name}` : 'Practice Mode';
+
+
+        exerciseView.innerHTML = `
+            <div class="exercise-view-header-bar">
+                <button id="back-to-path-btn" class="btn btn-secondary">&laquo; Back to Path</button>
+                <div class="exercise-level-title-display">${levelTitleText}</div>
+            </div>
             <div class="exercise-header">
-                <h3>${exerciseConfig ? exerciseConfig.name : 'Exercise'}</h3>
+                <h3>${exerciseDisplayName}</h3>
                 ${levelData ? `
                     <div class="exercise-level-info">Level ${this.exerciseEngine.currentLevel}: ${levelData.name}</div>
                     <div class="exercise-session-progress">
@@ -739,15 +868,13 @@ class TuneLearnApp {
                 ` : ''}
             </div>
             <div class="exercise-content">
-                ${this.renderExerciseContent()}
+                ${this.renderExerciseContent()} 
             </div>
-            ${this.exerciseEngine.exerciseData && this.exerciseEngine.exerciseData.theorySnippet ? `
-            <div class="theory-snippet">
-                <strong>💡 Tip:</strong> ${this.exerciseEngine.exerciseData.theorySnippet}
+            <div id="theory-snippet-display" class="theory-snippet" style="${exerciseData && exerciseData.theorySnippet ? '' : 'display:none;'}">
+                <strong>💡 Tip:</strong> <span id="theory-snippet-text">${exerciseData && exerciseData.theorySnippet ? exerciseData.theorySnippet : ''}</span>
             </div>
-            ` : ''}
             <div class="exercise-controls">
-                ${ (this.exerciseEngine.currentExercise === 'scale-practice' || this.exerciseEngine.currentExercise === 'chord-building') ?
+                ${ (exerciseData && (exerciseData.type === 'scale-practice' || exerciseData.type === 'chord-building')) ?
                     '<button id="submit-performance-btn" class="btn btn-primary">Submit Attempt</button>' :
                     '<button id="check-answer" class="btn btn-primary" style="display: none;">Check Answer</button>'
                 }
@@ -782,22 +909,45 @@ class TuneLearnApp {
             }
         }
         
-        // Attach event listeners for multiple-choice answer buttons if they exist
-        const exerciseAnswerButtons = exercisePanel.querySelectorAll('.answer-btn');
+        
+        // Re-attach common event listeners
+        const backToPathBtn = document.getElementById('back-to-path-btn');
+        if (backToPathBtn) {
+            backToPathBtn.addEventListener('click', () => this.showLearningPathView());
+        }
+
+        const nextExerciseBtn = document.getElementById('next-exercise');
+        if (nextExerciseBtn) {
+            nextExerciseBtn.addEventListener('click', () => this.nextExercise());
+        }
+
+        const submitPerformanceBtn = document.getElementById('submit-performance-btn');
+        if (submitPerformanceBtn) {
+            submitPerformanceBtn.addEventListener('click', () => this.submitPerformanceAnswer());
+        }
+
+        const checkAnswerBtn = document.getElementById('check-answer');
+        if (checkAnswerBtn) {
+            checkAnswerBtn.addEventListener('click', () => this.checkAnswer());
+             if (exerciseData && !(exerciseData.type === 'scale-practice' || exerciseData.type === 'chord-building')) {
+                checkAnswerBtn.style.display = 'none'; // Initially hidden for MCQs
+            }
+        }
+        
+        const exerciseAnswerButtons = exerciseView.querySelectorAll('.answer-btn');
         if (exerciseAnswerButtons.length > 0) {
             exerciseAnswerButtons.forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     exerciseAnswerButtons.forEach(b => b.classList.remove('selected'));
                     e.target.classList.add('selected');
-                    if (checkAnswerBtn) { // Show check answer button for MCQs
+                    if (checkAnswerBtn) { 
                         checkAnswerBtn.style.display = 'inline-block';
                     }
                 });
             });
         }
 
-        // Auto-play audio for listening exercises using the new handler
-        if (this.exerciseEngine.exerciseData && this.exerciseEngine.exerciseData.audioPlayback) {
+        if (exerciseData && exerciseData.audioPlayback) {
             setTimeout(() => this.handlePlayExerciseAudio(), 500);
         }
 
@@ -809,140 +959,39 @@ class TuneLearnApp {
 
     renderExerciseContent() {
         const exerciseData = this.exerciseEngine.exerciseData;
-        if (!exerciseData) {
-            return '<p>Loading exercise...</p>';
-        }
+        if (!exerciseData) return '<p>Loading exercise...</p>';
 
         let contentHtml = '';
+        const exerciseType = exerciseData.type;
 
-        switch (this.exerciseEngine.currentExercise) {
+        switch (exerciseType) {
             case 'note-identification':
-                contentHtml = `
-                    <div class="exercise-question">
-                        <p>${exerciseData.question}</p>
-                        <button id="play-exercise-audio-btn" class="btn btn-primary">
-                            🔊 Play Again
-                        </button>
-                    </div>
-                    <div class="exercise-answers">
-                        ${this.generateNoteOptions(exerciseData.correctAnswer).map(option => 
-                            `<button class="answer-btn btn">${option}</button>`
-                        ).join('')}
-                    </div>
-                `;
-                break;
-                
             case 'interval-identification':
-                contentHtml = `
-                    <div class="exercise-question">
-                        <p>${exerciseData.question}</p>
-                        <button id="play-exercise-audio-btn" class="btn btn-primary">
-                            🔊 Play Again
-                        </button>
-                    </div>
-                    <div class="exercise-answers">
-                        ${this.generateIntervalOptions(exerciseData.correctAnswer).map(option => 
-                            `<button class="answer-btn btn">${option}</button>`
-                        ).join('')}
-                    </div>
-                `;
-                break;
-                
             case 'chord-identification':
                 contentHtml = `
                     <div class="exercise-question">
-                        <p>${exerciseData.question}</p>
-                        <button id="play-exercise-audio-btn" class="btn btn-primary">
-                            🔊 Play Again
-                        </button>
+                        <p class="exercise-instruction">${exerciseData.question || 'Identify the sound:'}</p>
+                        <button id="play-exercise-audio-btn" class="btn btn-primary">🔊 Play Sound</button>
                     </div>
                     <div class="exercise-answers">
-                        ${this.generateChordOptions(exerciseData.correctAnswer).map(option => 
-                            `<button class="answer-btn btn">${option}</button>`
-                        ).join('')}
-                    </div>
-                `;
+                        ${(exerciseData.options && exerciseData.options.length > 0) ? 
+                            exerciseData.options.map(option => `<button class="answer-btn btn">${option}</button>`).join('') : 
+                            '<p>No options available.</p>'}
+                    </div>`;
                 break;
-                
             case 'scale-practice':
-                contentHtml = `
-                    <div class="exercise-question">
-                        <p>${exerciseData.instruction}</p>
-                        <p class="instruction-detail">Use your MIDI keyboard or click the piano keys. Notes will be validated as you play.</p>
-                    </div>
-                    <div id="performance-feedback" class="performance-feedback"></div>
-                `;
-                break;
-                
             case 'chord-building':
                 contentHtml = `
                     <div class="exercise-question">
-                        <p>${exerciseData.instruction}</p>
-                        <p class="instruction-detail">Use your MIDI keyboard or click the piano keys. Notes will be validated when you indicate completion.</p>
+                        <p class="exercise-instruction">${exerciseData.instruction || 'Perform the task on the keyboard.'}</p>
+                        <p class="instruction-detail">${exerciseType === 'scale-practice' ? 'Play the scale notes sequentially.' : 'Play the chord notes together.'}</p>
                     </div>
-                    <div id="performance-feedback" class="performance-feedback"></div>
-                `;
+                    <div id="performance-feedback" class="performance-feedback"></div>`;
                 break;
-                
             default:
-                contentHtml = `<p>Unknown exercise type or content not implemented yet.</p>`;
+                contentHtml = `<p>Unknown exercise type: ${exerciseType}.</p>`;
         }
         return contentHtml;
-    }
-
-    generateNoteOptions(correctAnswer) {
-        const allNotes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-        const options = [correctAnswer];
-        
-        // Add 3 random incorrect options
-        while (options.length < 4) {
-            const randomNote = allNotes[Math.floor(Math.random() * allNotes.length)];
-            if (!options.includes(randomNote)) {
-                options.push(randomNote);
-            }
-        }
-        
-        // Shuffle the options
-        return this.shuffleArray(options);
-    }
-
-    generateIntervalOptions(correctAnswer) {
-        const allIntervals = [
-            'Perfect Unison', 'Minor 2nd', 'Major 2nd', 'Minor 3rd', 'Major 3rd',
-            'Perfect 4th', 'Perfect 5th', 'Minor 6th', 'Major 6th', 'Minor 7th',
-            'Major 7th', 'Perfect Octave'
-        ];
-        
-        const options = [correctAnswer];
-        
-        // Add 3 random incorrect options
-        while (options.length < 4) {
-            const randomInterval = allIntervals[Math.floor(Math.random() * allIntervals.length)];
-            if (!options.includes(randomInterval)) {
-                options.push(randomInterval);
-            }
-        }
-        
-        return this.shuffleArray(options);
-    }
-
-    generateChordOptions(correctAnswer) {
-        const allChords = [
-            'Major', 'Minor', 'Diminished', 'Augmented', 'Major 7th', 'Minor 7th',
-            'Dominant 7th', 'Diminished 7th', 'Sus2', 'Sus4'
-        ];
-        
-        const options = [correctAnswer];
-        
-        // Add 3 random incorrect options
-        while (options.length < 4) {
-            const randomChord = allChords[Math.floor(Math.random() * allChords.length)];
-            if (!options.includes(randomChord)) {
-                options.push(randomChord);
-            }
-        }
-        
-        return this.shuffleArray(options);
     }
 
     shuffleArray(array) {
@@ -982,16 +1031,15 @@ class TuneLearnApp {
     }
 
     checkAnswer() {
-        if (!this.exerciseEngine || !this.exerciseEngine.currentExercise) return;
+        if (!this.exerciseEngine || !this.exerciseEngine.exerciseData) return;
 
-        const exerciseContent = document.querySelector('#exercise-panel .exercise-content');
-        const selectedBtn = exerciseContent.querySelector('.answer-btn.selected');
+        const exerciseView = document.getElementById('exercise-view');
+        const selectedBtn = exerciseView.querySelector('.answer-btn.selected');
 
         if (!selectedBtn) {
             this.showFeedback('Please select an answer first!', 'warning');
             return;
         }
-
         const selectedAnswer = selectedBtn.textContent.trim();
         const feedback = this.exerciseEngine.submitAnswer(selectedAnswer);
 
@@ -1002,45 +1050,53 @@ class TuneLearnApp {
         answerButtons.forEach(btn => {
             btn.disabled = true;
             // Highlight the correct answer if the user was wrong and details are available
-            if (!feedback.isCorrect && feedback.correctAnswerDetails && btn.textContent.trim() === feedback.correctAnswerDetails) {
+            if (!feedback.isCorrect && feedback.correctAnswerDetails && 
+                (btn.textContent.trim().toLowerCase() === String(feedback.correctAnswerDetails).toLowerCase())) {
                 btn.classList.add('correct-answer'); 
             }
         });
+        
+        if (feedback.theorySnippet) {
+            this.updateTheorySnippetDisplay(feedback.theorySnippet);
+        }
 
         // Hide check answer button and show next exercise button
         const checkAnswerBtn = document.getElementById('check-answer');
         if (checkAnswerBtn) {
+            checkAnswerBtn.style.display = 'none'; // Hide it fully
             checkAnswerBtn.disabled = true; 
         }
         const nextExerciseBtn = document.getElementById('next-exercise');
         if (nextExerciseBtn) {
             nextExerciseBtn.style.display = 'inline-block';
         }
-        
-        // No automatic nextExercise call, user clicks the button.
     }
 
     submitPerformanceAnswer() {
-        if (!this.exerciseEngine || !this.exerciseEngine.isActive) {
-            console.warn('Cannot submit performance, exercise engine not active.');
+        if (!this.exerciseEngine || !this.exerciseEngine.isActive || !this.exerciseEngine.exerciseData) {
+            console.warn('Cannot submit performance, exercise engine not active or no exercise data.');
             return;
         }
 
-        // Prevent submission if no notes were played
-        if (this.userPerformanceInput.length === 0) {
+        // Prevent submission if no notes were played for relevant exercises
+        if (this.userPerformanceInput.length === 0 && 
+            (this.exerciseEngine.exerciseData.type === 'scale-practice' || this.exerciseEngine.exerciseData.type === 'chord-building')) {
             this.showFeedback('Please play some notes before submitting!', 'warning');
             return;
         }
 
         console.log('Submitting performance input:', this.userPerformanceInput);
         
-        // Call the exercise engine's submitAnswer with the array of notes.
         const feedback = this.exerciseEngine.submitAnswer(this.userPerformanceInput); 
 
         if (feedback.playedNotes && feedback.expectedNotes) {
             this.displayPerformanceVisualFeedback(feedback.playedNotes, feedback.expectedNotes);
         }
         this.showFeedback(feedback.message, feedback.isCorrect ? 'success' : 'error');
+        
+        if (feedback.theorySnippet) {
+            this.updateTheorySnippetDisplay(feedback.theorySnippet);
+        }
         
         // Disable the submit button
         const submitBtn = document.getElementById('submit-performance-btn');
@@ -1053,9 +1109,19 @@ class TuneLearnApp {
         if (nextExerciseBtn) {
             nextExerciseBtn.style.display = 'inline-block';
         }
-        
-        // No automatic nextExercise call, user clicks the button.
-        // Visual feedback for performance exercises (e.g., highlighting notes on piano) will be in a future task.
+    }
+    
+    updateTheorySnippetDisplay(snippetText) {
+        const snippetDisplay = document.getElementById('theory-snippet-display');
+        const snippetTextEl = document.getElementById('theory-snippet-text');
+        if (snippetDisplay && snippetTextEl) {
+            if (snippetText) {
+                snippetTextEl.innerHTML = snippetText; // Use innerHTML if snippet can contain formatting
+                snippetDisplay.style.display = 'block';
+            } else {
+                snippetDisplay.style.display = 'none';
+            }
+        }
     }
 
     displayPerformanceVisualFeedback(playedNotes, expectedNotes) {
@@ -1119,12 +1185,30 @@ class TuneLearnApp {
                this.showModalNotification(levelUpData.message, "Level Up!");
             }
 
-            if (this.exerciseEngine.currentExercise) { // If a new exercise was successfully started
-                this.renderCurrentExercise(); 
+            // A new exercise should be started by exerciseEngine.nextExercise() if progression happens
+            // The ExerciseEngine's nextExercise() internally calls startExercise() if there's a next one in sequence
+            // or handles level progression.
+            // We just need to react to the state of exerciseEngine.
+            
+            if (this.exerciseEngine.isActive && this.exerciseEngine.exerciseData) {
+                 // A new exercise was successfully started by the engine (could be next in level or new level)
+                document.getElementById('exercise-panel').classList.add('exercise-active');
+                this.userPerformanceInput = []; 
+                if(this.piano) this.piano.clearAllKeyColorizations();
+                this.renderCurrentExercise();
             } else {
-                // Handle case where no more exercises or curriculum ends
-                this.showExerciseStartScreen(); 
-                this.showFeedback("🎉 Congratulations! You've completed all available exercises for now.", "success");
+                // No more exercises in the current sequence, or curriculum completed.
+                // Or nextExercise logic in engine decided not to start one immediately.
+                document.getElementById('exercise-panel').classList.remove('exercise-active');
+                this.renderLearningPath(); 
+                // Avoid double message if level up already shown.
+                // Message assumes user completed *something* to get here.
+                if (!levelUpData) { 
+                     this.showFeedback("🎉 Section complete! Select a new level or continue your journey.", "success");
+                } else if (levelUpData && !this.exerciseEngine.curriculum[this.exerciseEngine.currentLevel +1] && !this.exerciseEngine.isActive) {
+                    // If it was a level up AND there are no more levels (or engine is not active)
+                    this.showFeedback("🎉 Congratulations! You've completed all available levels!", "success");
+                }
             }
         }
     }
@@ -1169,57 +1253,72 @@ class TuneLearnApp {
             console.error("AudioEngine not available.");
             return;
         }
-        if (!this.exerciseEngine || !this.exerciseEngine.exerciseData || !this.exerciseEngine.exerciseData.audioPlayback) {
+        // Use this.exerciseEngine.exerciseData.audioPlayback directly
+        const audioPlaybackData = this.exerciseEngine.exerciseData ? this.exerciseEngine.exerciseData.audioPlayback : null;
+
+        if (!audioPlaybackData) {
             console.warn("No audio playback data available for this exercise.");
             return;
         }
 
-        const audioData = this.exerciseEngine.exerciseData.audioPlayback;
+        const VELOCITY = 0.7; // Standard velocity
+        const NOTE_DURATION = 1.0; // Standard duration for single notes in seconds
+        const CHORD_NOTE_DURATION = 1.5; // Longer for chords
+        const INTERVAL_DELAY = 700; // ms between interval notes
+        const CHORD_STAGGER = 40; // ms between chord notes if staggered
 
-        switch (audioData.type) {
+        switch (audioPlaybackData.type) {
             case 'note':
-                if (audioData.noteName && typeof audioData.octave !== 'undefined') {
-                    this.audioEngine.playNote(audioData.noteName, audioData.octave, 0.8, 1.5); // Duration 1.5s
+                if (audioPlaybackData.noteName && typeof audioPlaybackData.octave !== 'undefined') {
+                    this.audioEngine.playNote(audioPlaybackData.noteName, audioPlaybackData.octave, VELOCITY, NOTE_DURATION);
                 } else {
-                    console.error("Missing data for note playback:", audioData);
+                    console.error("Missing data for note playback:", audioPlaybackData);
                 }
                 break;
             case 'interval':
-                if (audioData.rootName && typeof audioData.rootOctave !== 'undefined' && typeof audioData.intervalSemitones !== 'undefined') {
-                    this.audioEngine.playNote(audioData.rootName, audioData.rootOctave, 0.8, 1); // Duration 1s
+                if (audioPlaybackData.rootName && typeof audioPlaybackData.rootOctave !== 'undefined' && typeof audioPlaybackData.intervalSemitones !== 'undefined') {
+                    this.audioEngine.playNote(audioPlaybackData.rootName, audioPlaybackData.rootOctave, VELOCITY, NOTE_DURATION);
+                    
                     setTimeout(() => {
-                        const rootMidiVal = MusicTheory.noteToMidi(audioData.rootName, audioData.rootOctave);
-                        if (rootMidiVal === null) {
-                             console.error("Invalid root note for interval playback:", audioData); return;
+                        const rootMidi = MusicTheory.noteToMidi(audioPlaybackData.rootName, audioPlaybackData.rootOctave);
+                        if (rootMidi === null) {
+                             console.error("Invalid root note for interval playback:", audioPlaybackData); return;
                         }
-                        const targetMidi = rootMidiVal + audioData.intervalSemitones;
+                        const targetMidi = rootMidi + audioPlaybackData.intervalSemitones;
                         const targetNoteFull = MusicTheory.midiToNote(targetMidi);
-                        this.audioEngine.playNote(targetNoteFull.note, targetNoteFull.octave, 0.8, 1); // Duration 1s
-                    }, 800); // Delay between notes (e.g., 800ms)
+                        if (targetNoteFull) {
+                           this.audioEngine.playNote(targetNoteFull.note, targetNoteFull.octave, VELOCITY, NOTE_DURATION);
+                        } else {
+                           console.error("Could not determine target note for interval:", targetMidi);
+                        }
+                    }, INTERVAL_DELAY);
                 } else {
-                    console.error("Missing data for interval playback:", audioData);
+                    console.error("Missing data for interval playback:", audioPlaybackData);
                 }
                 break;
             case 'chord':
-                if (audioData.rootName && typeof audioData.rootOctave !== 'undefined' && Array.isArray(audioData.intervals)) {
-                    const rootMidiVal = MusicTheory.noteToMidi(audioData.rootName, audioData.rootOctave);
+                if (audioPlaybackData.rootName && typeof audioPlaybackData.rootOctave !== 'undefined' && Array.isArray(audioPlaybackData.intervals)) {
+                    const rootMidiVal = MusicTheory.noteToMidi(audioPlaybackData.rootName, audioPlaybackData.rootOctave);
                     if (rootMidiVal === null) {
-                         console.error("Invalid root note for chord playback:", audioData); return;
+                         console.error("Invalid root note for chord playback:", audioPlaybackData); return;
                     }
-                    // Play chord notes with a slight stagger or simultaneously if AudioEngine supports it well
-                    audioData.intervals.forEach((intervalSemitone, index) => {
+                    audioPlaybackData.intervals.forEach((intervalSemitone, index) => {
                         setTimeout(() => {
                             const targetMidi = rootMidiVal + intervalSemitone;
                             const noteToPlay = MusicTheory.midiToNote(targetMidi);
-                            this.audioEngine.playNote(noteToPlay.note, noteToPlay.octave, 0.6, 1.5); // Duration 1.5s
-                        }, index * 50); // Stagger chord notes slightly
+                            if (noteToPlay) {
+                               this.audioEngine.playNote(noteToPlay.note, noteToPlay.octave, VELOCITY * 0.8, CHORD_NOTE_DURATION); // Slightly lower velocity for chords
+                            } else {
+                               console.error("Could not determine note for chord component:", targetMidi);
+                            }
+                        }, index * CHORD_STAGGER); 
                     });
                 } else {
-                    console.error("Missing data for chord playback:", audioData);
+                    console.error("Missing data for chord playback:", audioPlaybackData);
                 }
                 break;
             default:
-                console.warn("Unknown audio playback type:", audioData.type);
+                console.warn("Unknown audio playback type:", audioPlaybackData.type);
         }
     }
 
