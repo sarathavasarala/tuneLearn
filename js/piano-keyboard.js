@@ -65,6 +65,8 @@ class PianoKeyboard {
         
         this.activeComputerKeys = new Set();
         
+        this.keys = {}; // Initialize the keys map
+        
         this.init();
     }
     
@@ -82,6 +84,7 @@ class PianoKeyboard {
         }
         
         this.container.innerHTML = '';
+        this.keys = {}; // Clear and reinitialize the keys map on regeneration
         
         const keyboardElement = document.createElement('div');
         keyboardElement.className = 'piano-keys';
@@ -182,6 +185,7 @@ class PianoKeyboard {
         keyElement.addEventListener('mouseleave', (e) => this.handleKeyUp(e));
         
         container.appendChild(keyElement);
+        this.keys[fullNote] = keyElement; // Populate the keys map
     }
     
     // Calculate position for black keys
@@ -636,6 +640,35 @@ class PianoKeyboard {
             // Remove lock styling
             const lockedKeys = this.container.querySelectorAll('.locked');
             lockedKeys.forEach(key => key.classList.remove('locked'));
+        }
+    }
+
+    // Visual Feedback Methods for Exercises
+    colorizeKey(noteNameWithOctave, cssClass) {
+        const keyElement = this.keys[noteNameWithOctave];
+        if (keyElement) {
+            keyElement.classList.add(cssClass);
+        } else {
+            console.warn(`Key element not found for ${noteNameWithOctave} in colorizeKey`);
+        }
+    }
+
+    decolorizeKey(noteNameWithOctave, cssClass) {
+        const keyElement = this.keys[noteNameWithOctave];
+        if (keyElement) {
+            keyElement.classList.remove(cssClass);
+        } else {
+            console.warn(`Key element not found for ${noteNameWithOctave} in decolorizeKey`);
+        }
+    }
+
+    clearAllKeyColorizations() {
+        const feedbackClasses = ['user-played-correct', 'user-played-incorrect', 'expected-missed'];
+        for (const noteName in this.keys) {
+            if (this.keys.hasOwnProperty(noteName)) {
+                const keyElement = this.keys[noteName];
+                feedbackClasses.forEach(cls => keyElement.classList.remove(cls));
+            }
         }
     }
 }
